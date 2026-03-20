@@ -1,212 +1,212 @@
-/**
- * Pilgrims Book House — Google Ads Live Sync Worker
- * Deploy to: https://pbhtrakcer.eliofattal05.workers.dev
- *
- * Setup (Cloudflare Dashboard > Workers > Settings > Variables):
- *   DEVELOPER_TOKEN  — your Google Ads developer token (from ads.google.com/aw/apicenter)
- *   CLIENT_ID        — OAuth2 client ID (from console.cloud.google.com)
- *   CLIENT_SECRET    — OAuth2 client secret
- *   REFRESH_TOKEN    — long-lived refresh token (see OAUTH SETUP below)
- *   CUSTOMER_ID      — your Google Ads customer ID without dashes (e.g. 7844613662)
- *
- * ── OAUTH SETUP ────────────────────────────────────────────────────────
- * 1. Go to console.cloud.google.com → APIs & Services → Credentials
- * 2. Create an OAuth 2.0 Client ID (type: "Desktop app" or "Web app")
- * 3. Enable the "Google Ads API" in the API Library
- * 4. Run this in your browser to get a refresh token:
- *    https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob&response_type=code&scope=https://www.googleapis.com/auth/adwords&access_type=offline&prompt=consent
- * 5. Exchange the code: POST to https://oauth2.googleapis.com/token with
- *    { code, client_id, client_secret, redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'authorization_code' }
- *    Save the returned refresh_token as your REFRESH_TOKEN secret.
- * ───────────────────────────────────────────────────────────────────────
- */
+// ============================================================
+// Cloudflare Worker — Google Ads API Proxy for PBH Tracker
+// Deploy this at: dash.cloudflare.com → Workers → Create
+// ============================================================
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+// ── CREDENTIALS (set these as Worker Environment Variables) ──
+// In Cloudflare Dashboard → Worker → Settings → Variables:
+//   GOOGLE_CLIENT_ID
+//   GOOGLE_CLIENT_SECRET
+//   GOOGLE_REFRESH_TOKEN
+//   GOOGLE_DEVELOPER_TOKEN
+//   GOOGLE_CUSTOMER_ID
 
-export default {
-  async fetch(request, env) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS });
-    }
-
-    try {
-      const accessToken = await getAccessToken(env);
-      const customerId = (env.CUSTOMER_ID || '').replace(/-/g, '');
-
-      const [campaignData, dailyData] = await Promise.all([
-        fetchCampaigns(accessToken, env.DEVELOPER_TOKEN, customerId),
-        fetchDailyData(accessToken, env.DEVELOPER_TOKEN, customerId),
-      ]);
-
-      const totals = computeTotals(campaignData);
-
-      return json({ success: true, data: { campaigns: campaignData, dailyData, totals } });
-    } catch (err) {
-      console.error(err);
-      return json({ success: false, error: err.message }, 500);
-    }
-  },
-};
-
-// ── OAuth2: exchange refresh token for access token ──────────────────
+const ALLOWED_ORIGIN = '*'; // Replace with your Cloudflare Pages domain e.g. 'https://pbh-tracker.pages.dev'
 
 async function getAccessToken(env) {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: env.CLIENT_ID,
-      client_secret: env.CLIENT_SECRET,
-      refresh_token: env.REFRESH_TOKEN,
-      grant_type: 'refresh_token',
-    }),
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      refresh_token: env.GOOGLE_REFRESH_TOKEN,
+      grant_type: 'refresh_token'
+    })
   });
-  const data = await res.json();
-  if (!data.access_token) {
-    throw new Error('Failed to get access token: ' + (data.error_description || data.error || JSON.stringify(data)));
-  }
+  const data = await resp.json();
+  if (!data.access_token) throw new Error('Failed to get access token: ' + JSON.stringify(data));
   return data.access_token;
 }
 
-// ── Fetch campaign-level totals (last 30 days) ───────────────────────
+async function fetchAdsData(env, accessToken) {
+  // Use manager account ID for API calls
+  const customerId = '9900177864';
 
-async function fetchCampaigns(accessToken, developerToken, customerId) {
+  // Query last 30 days of campaign performance
   const query = `
     SELECT
-      campaign.id,
       campaign.name,
       campaign.status,
       metrics.clicks,
       metrics.impressions,
       metrics.cost_micros,
-      metrics.average_cpc
+      metrics.ctr,
+      metrics.average_cpc,
+      segments.date
     FROM campaign
     WHERE segments.date DURING LAST_30_DAYS
       AND campaign.status != 'REMOVED'
-    ORDER BY metrics.clicks DESC
-    LIMIT 10
+    ORDER BY segments.date DESC
   `;
 
-  const rows = await runGaqlQuery(accessToken, developerToken, customerId, query);
-
-  return rows.map(function(row) {
-    var cpc = row.metrics?.averageCpc ? row.metrics.averageCpc / 1000000 : 0;
-    var cost = row.metrics?.costMicros ? row.metrics.costMicros / 1000000 : 0;
-    return {
-      id: row.campaign?.id || '',
-      name: row.campaign?.name || 'Campaign',
-      status: row.campaign?.status || 'UNKNOWN',
-      clicks: row.metrics?.clicks || 0,
-      imp: row.metrics?.impressions || 0,
-      cost: Math.round(cost * 100) / 100,
-      avgCpc: Math.round(cpc * 100) / 100,
-    };
-  });
-}
-
-// ── Fetch daily breakdown (last 30 days) ─────────────────────────────
-
-async function fetchDailyData(accessToken, developerToken, customerId) {
-  const query = `
-    SELECT
-      segments.date,
-      metrics.clicks,
-      metrics.impressions,
-      metrics.cost_micros,
-      metrics.average_cpc
-    FROM campaign
-    WHERE segments.date DURING LAST_30_DAYS
-      AND campaign.status != 'REMOVED'
-    ORDER BY segments.date ASC
-  `;
-
-  const rows = await runGaqlQuery(accessToken, developerToken, customerId, query);
-
-  // Group by date (multiple campaigns per day)
-  var byDate = {};
-  rows.forEach(function(row) {
-    var d = row.segments?.date;
-    if (!d) return;
-    if (!byDate[d]) byDate[d] = { date: d, clicks: 0, impressions: 0, costMicros: 0, cpcTotal: 0, cpcCount: 0 };
-    byDate[d].clicks += row.metrics?.clicks || 0;
-    byDate[d].impressions += row.metrics?.impressions || 0;
-    byDate[d].costMicros += row.metrics?.costMicros || 0;
-    if (row.metrics?.averageCpc) {
-      byDate[d].cpcTotal += row.metrics.averageCpc;
-      byDate[d].cpcCount++;
+  const resp = await fetch(
+    `https://googleads.googleapis.com/v19/customers/${customerId}/googleAds:search`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'developer-token': env.GOOGLE_DEVELOPER_TOKEN,
+        'Content-Type': 'application/json',
+        'login-customer-id': '9900177864'
+      },
+      body: JSON.stringify({ query: query.trim() })
     }
-  });
+  );
 
-  return Object.values(byDate).map(function(d) {
-    var cost = d.costMicros / 1000000;
-    var avgCpc = d.cpcCount > 0 ? (d.cpcTotal / d.cpcCount / 1000000) : 0;
-    var dateObj = new Date(d.date);
-    var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var label = monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
-    return {
-      date: label,
-      day: dayNames[dateObj.getDay()],
-      clicks: d.clicks,
-      impressions: d.impressions,
-      cpc: Math.round(avgCpc * 100) / 100,
-      cost: Math.round(cost * 100) / 100,
-      notes: '',
-    };
-  });
-}
-
-// ── Compute overall totals from campaign rows ─────────────────────────
-
-function computeTotals(campaigns) {
-  var clicks = 0, impressions = 0, cost = 0;
-  campaigns.forEach(function(c) {
-    clicks += c.clicks;
-    impressions += c.imp;
-    cost += c.cost;
-  });
-  var avgCpc = clicks > 0 ? cost / clicks : 0;
-  return {
-    clicks,
-    impressions,
-    cost: Math.round(cost * 100) / 100,
-    avgCpc: Math.round(avgCpc * 1000) / 1000,
-  };
-}
-
-// ── Google Ads API query runner ───────────────────────────────────────
-
-async function runGaqlQuery(accessToken, developerToken, customerId, query) {
-  const url = `https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:search`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + accessToken,
-      'developer-token': developerToken,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query: query.trim() }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error('Google Ads API error ' + res.status + ': ' + errBody);
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Google Ads API error ${resp.status}: ${err}`);
   }
 
-  const data = await res.json();
-  return data.results || [];
+  const raw = await resp.json();
+  return processAdsData(raw);
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+function processAdsData(raw) {
+  if (!raw.results || raw.results.length === 0) {
+    return { campaigns: [], dailyData: [], totals: { clicks: 0, impressions: 0, cost: 0, ctr: 0, avgCpc: 0 } };
+  }
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+  // Group by date
+  const byDate = {};
+  const byCampaign = {};
+
+  for (const row of raw.results) {
+    const date = row.segments?.date || 'unknown';
+    const campaignName = row.campaign?.name || 'Unknown';
+    const clicks = parseInt(row.metrics?.clicks || 0);
+    const impressions = parseInt(row.metrics?.impressions || 0);
+    const costMicros = parseInt(row.metrics?.costMicros || 0);
+    const cost = costMicros / 1_000_000;
+
+    // Daily totals
+    if (!byDate[date]) byDate[date] = { date, clicks: 0, impressions: 0, cost: 0 };
+    byDate[date].clicks += clicks;
+    byDate[date].impressions += impressions;
+    byDate[date].cost += cost;
+
+    // Per campaign totals
+    if (!byCampaign[campaignName]) byCampaign[campaignName] = { name: campaignName, status: row.campaign?.status, clicks: 0, impressions: 0, cost: 0 };
+    byCampaign[campaignName].clicks += clicks;
+    byCampaign[campaignName].impressions += impressions;
+    byCampaign[campaignName].cost += cost;
+  }
+
+  // Sort dates ascending
+  const dailyData = Object.values(byDate)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(d => ({
+      date: formatDate(d.date),
+      day: getDayName(d.date),
+      clicks: d.clicks,
+      impressions: d.impressions,
+      cost: parseFloat(d.cost.toFixed(2)),
+      cpc: d.clicks > 0 ? parseFloat((d.cost / d.clicks).toFixed(2)) : 0
+    }));
+
+  const campaigns = Object.values(byCampaign).map(c => ({
+    name: c.name,
+    status: c.status,
+    clicks: c.clicks,
+    impressions: c.impressions,
+    cost: parseFloat(c.cost.toFixed(2))
+  }));
+
+  const totals = dailyData.reduce((acc, d) => ({
+    clicks: acc.clicks + d.clicks,
+    impressions: acc.impressions + d.impressions,
+    cost: parseFloat((acc.cost + d.cost).toFixed(2))
+  }), { clicks: 0, impressions: 0, cost: 0 });
+
+  totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
+  totals.avgCpc = totals.clicks > 0 ? parseFloat((totals.cost / totals.clicks).toFixed(2)) : 0;
+
+  return { campaigns, dailyData, totals };
 }
+
+function formatDate(dateStr) {
+  // dateStr is YYYY-MM-DD
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+function getDayName(dateStr) {
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return days[d.getUTCDay()];
+}
+
+// ── MAIN HANDLER ──
+export default {
+  async fetch(request, env, ctx) {
+    // CORS headers
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
+    // Handle preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    // Only allow GET
+    if (request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+    }
+
+    try {
+      // Check cache first (cache for 1 hour)
+      const cacheKey = new Request('https://pbh-ads-cache/data', request);
+      const cache = caches.default;
+      let response = await cache.match(cacheKey);
+
+      if (!response) {
+        // Fetch fresh data
+        const accessToken = await getAccessToken(env);
+        const adsData = await fetchAdsData(env, accessToken);
+
+        const body = JSON.stringify({
+          success: true,
+          lastUpdated: new Date().toISOString(),
+          data: adsData
+        });
+
+        response = new Response(body, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=3600' // Cache 1 hour
+          }
+        });
+
+        ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      }
+
+      return response;
+
+    } catch (err) {
+      console.error('Worker error:', err);
+      return new Response(JSON.stringify({
+        success: false,
+        error: err.message
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+};
