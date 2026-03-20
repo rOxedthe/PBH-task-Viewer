@@ -30,8 +30,9 @@ async function getAccessToken(env) {
 }
 
 async function fetchAdsData(env, accessToken) {
-  // Use manager account ID for API calls
-  const customerId = '9900177864';
+  // Query the CLIENT account (where campaigns live)
+  const customerId = '7844613662'; // Pilgrims subscription - has the real campaigns
+  const managerId = '9900177864';  // Manager account for auth
 
   // Query last 30 days of campaign performance
   const query = `
@@ -58,7 +59,7 @@ async function fetchAdsData(env, accessToken) {
         'Authorization': `Bearer ${accessToken}`,
         'developer-token': env.GOOGLE_DEVELOPER_TOKEN,
         'Content-Type': 'application/json',
-        'login-customer-id': '9900177864'
+        'login-customer-id': managerId
       },
       body: JSON.stringify({ query: query.trim() })
     }
