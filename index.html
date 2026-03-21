@@ -195,6 +195,11 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
 .pdeliv{font-size:12px;color:var(--navyL)}
 .overall{font-family:'Playfair Display',serif;font-size:30px;font-weight:600;color:var(--navy)}
 .phsel{background:var(--cream2);border:1px solid var(--bdr);border-radius:6px;color:var(--navy);padding:5px 9px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
+.prisel{border:none;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;outline:none;padding:2px 5px;font-family:'DM Sans',sans-serif;appearance:none;-webkit-appearance:none}
+.prisel.ph{background:rgba(176,58,46,.08);color:var(--red)}
+.prisel.pm2{background:var(--amberS);color:var(--amber)}
+.prisel.pl2{background:rgba(26,39,68,.06);color:var(--navyL)}
+.prisel.pc{background:rgba(26,39,68,.1);color:var(--navy)}
 .ph-edit{cursor:pointer;border-radius:3px;transition:background .15s}
 .ph-edit-block{display:block;width:100%}
 /* Universal editable-field indicator */
@@ -1213,6 +1218,12 @@ var sess = null, data = null, seoF = 'all', pendCam = null;
 function stC(s) { return s === 'Completed' ? 'sbg s-done' : s === 'In Progress' ? 'sbg s-prog' : 'sbg s-ns'; }
 function stD(s) { return s === 'Completed' ? '●' : s === 'In Progress' ? '◐' : '○'; }
 function prC(p) { return p === 'High' ? 'pb ph' : p === 'Medium' ? 'pb pm2' : p === 'Critical' ? 'pb pc' : 'pb pl2'; }
+function mkPriSel(col, id, cur) {
+  var opts = ['High','Medium','Low','Critical'].map(function(v) {
+    return '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + v + '</option>';
+  }).join('');
+  return '<select class="prisel ' + prC(cur).replace('pb ','') + '" data-col="' + col + '" data-id="' + id + '">' + opts + '</select>';
+}
 function mkSel(id, cur) {
   return '<select class="stsel" data-id="' + id + '">' +
     '<option' + (cur === 'Completed' ? ' selected' : '') + '>Completed</option>' +
@@ -1303,7 +1314,8 @@ function renderSEO() {
     var urlC   = own ? '<span class="ef tu" data-col="seoTasks" data-id="' + t.id + '" data-field="url">'       + (t.url       || '') + '</span>' : (t.url       || '—');
     var metaC  = own ? '<span class="ef tm" data-col="seoTasks" data-id="' + t.id + '" data-field="metaTitle">' + (t.metaTitle  || '') + '</span>' : (t.metaTitle  || '—');
     var notesC = own ? '<span class="ef"    data-col="seoTasks" data-id="' + t.id + '" data-field="notes">'     + (t.notes     || '') + '</span>' : (t.notes     || '—');
-    return '<tr><td>' + t.num + '</td><td>' + pageC + '</td><td>' + urlC + '</td><td>' + metaC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td>' + cell + '</td><td style="font-size:11px">' + notesC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
+    var prioC  = own ? mkPriSel('seoTasks', t.id, t.priority) : '<span class="' + prC(t.priority) + '">' + t.priority + '</span>';
+    return '<tr><td>' + t.num + '</td><td>' + pageC + '</td><td>' + urlC + '</td><td>' + metaC + '</td><td>' + prioC + '</td><td>' + cell + '</td><td style="font-size:11px">' + notesC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
   }).join('');
 
   var bd = data.blogPosts.filter(function(t) { return t.status === 'Completed'; }).length;
@@ -1320,7 +1332,8 @@ function renderSEO() {
     }
     var titleC = own ? '<span class="ef" data-col="blogPosts" data-id="' + t.id + '" data-field="title">' + t.title + '</span>' : t.title;
     var slugC  = own ? '<span class="ef tu" data-col="blogPosts" data-id="' + t.id + '" data-field="slug">'  + (t.slug  || '') + '</span>' : (t.slug  || '—');
-    return '<tr><td>' + t.num + '</td><td class="tn" style="max-width:230px">' + titleC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td style="font-family:\'DM Mono\',monospace;font-size:12px">' + t.wordCount + '</td><td>' + cell + '</td><td>' + slugC + '</td><td>' + linkCell + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
+    var prioC  = own ? mkPriSel('blogPosts', t.id, t.priority) : '<span class="' + prC(t.priority) + '">' + t.priority + '</span>';
+    return '<tr><td>' + t.num + '</td><td class="tn" style="max-width:230px">' + titleC + '</td><td>' + prioC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:12px">' + t.wordCount + '</td><td>' + cell + '</td><td>' + slugC + '</td><td>' + linkCell + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
   }).join('');
 
   // Attach select listeners
@@ -1345,6 +1358,7 @@ function renderSEO() {
     };
     inp.onkeydown = function(e) { if (e.key === 'Enter') this.blur(); };
   });
+  wirePriSelects();
   wireInlineEdits();
 }
 
@@ -1364,7 +1378,8 @@ function renderWebDev() {
       var nameEl = '<span class="ph-edit" data-id="' + p.id + '" data-field="name" data-type="text" title="Click to rename">' + (p.name || 'New Phase') + '</span>';
       var descEl = '<span class="ph-edit ph-edit-block" data-id="' + p.id + '" data-field="description" data-type="area" title="Click to edit description">' + (p.description || '') + '</span>';
       var delivEl = '<span class="ph-edit" data-id="' + p.id + '" data-field="deliverables" data-type="text" title="Click to edit">' + (p.deliverables || '') + '</span>';
-      return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + nameEl + '</div><span class="' + prC(p.priority) + '">' + p.priority + '</span></div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + descEl + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + delivEl + '</span>' + foot + '</div></div>';
+      var prioEl = mkPriSel('webDevPhases', p.id, p.priority);
+      return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + nameEl + '</div>' + prioEl + '</div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + descEl + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + delivEl + '</span>' + foot + '</div></div>';
     }
     return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + (p.name || '') + '</div><span class="' + prC(p.priority) + '">' + p.priority + '</span></div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + (p.description || '') + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + (p.deliverables || '') + '</span>' + foot + '</div></div>';
   }).join('');
@@ -1417,7 +1432,22 @@ function renderWebDev() {
         });
       };
     });
+    wirePriSelects();
   }
+}
+
+function wirePriSelects() {
+  document.querySelectorAll('.prisel').forEach(function(sel) {
+    if (sel._wired) return; sel._wired = true;
+    sel.onchange = function() {
+      var col = this.dataset.col, id = this.dataset.id, val = this.value;
+      var d = storeFieldEdit(col, id, 'priority', val);
+      data = d;
+      // update the select's color class to match new priority
+      this.className = 'prisel ' + prC(val).replace('pb ', '');
+      toast('Priority set to ' + val + ' ✓');
+    };
+  });
 }
 
 function renderSEM() {
