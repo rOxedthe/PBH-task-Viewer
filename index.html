@@ -405,6 +405,14 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
   font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all .15s;
 }
 .btn-restore:hover { border-color: var(--gold); color: var(--amber); background: var(--amberS); }
+.btn-clear-content {
+  display: flex; align-items: center; gap: 5px;
+  background: white; border: 1.5px solid var(--bdr2);
+  border-radius: var(--rsm); padding: 7px 13px;
+  color: var(--navyL); font-size: 13px; font-weight: 500;
+  font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all .15s;
+}
+.btn-clear-content:hover { border-color: var(--red); color: var(--red); background: var(--redS); }
 
 /* ── LIVE LINK ── */
 .live-link {
@@ -681,6 +689,9 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
           📂 Restore
         </button>
         <input type="file" id="restore-file-input" accept=".json" style="display:none">
+        <button class="btn-clear-content owner-only" id="btn-clear-content" style="display:none" title="Wipe all SEO, blog and web dev text — keeps row count">
+          🗑 Clear Content
+        </button>
         <button class="btn-reset-trigger owner-only" id="btn-new-month" style="display:none">
           📅 New Month
         </button>
@@ -1174,6 +1185,27 @@ function importBackup(file) {
   reader.readAsText(file);
 }
 
+function clearContent() {
+  if (!confirm('This will erase all text in SEO, Blog and Web Dev (page names, titles, notes, descriptions, URLs, deliverables) and reset all statuses to Not Started.\n\nThe row counts stay the same. Google Ads data is untouched.\n\nContinue?')) return;
+  var d = storeGet(), now = new Date().toISOString().split('T')[0];
+  d.seoTasks.forEach(function(t) {
+    t.page = ''; t.url = ''; t.metaTitle = ''; t.metaDesc = ''; t.notes = '';
+    t.status = 'Not Started'; t.lastUpdated = now;
+  });
+  d.blogPosts.forEach(function(t) {
+    t.title = ''; t.metaTitle = ''; t.slug = ''; t.liveUrl = '';
+    t.status = 'Not Started'; t.lastUpdated = now;
+  });
+  d.webDevPhases.forEach(function(p) {
+    p.name = ''; p.description = ''; p.deliverables = '';
+    p.status = 'Not Started'; p.done = 0; p.lastUpdated = now;
+  });
+  storeSave(d);
+  data = d;
+  renderAll();
+  toast('🗑 Content cleared — all fields reset');
+}
+
 // ══ STATE ══
 var sess = null, data = null, seoF = 'all', pendCam = null;
 
@@ -1625,6 +1657,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-logout').onclick = authLogout;
   document.getElementById('btn-logout-full').onclick = authLogout;
   document.getElementById('btn-logout-topbar').onclick = authLogout;
+  document.getElementById('btn-clear-content').onclick = clearContent;
   document.getElementById('btn-backup').onclick = exportBackup;
   document.getElementById('btn-restore').onclick = function() { document.getElementById('restore-file-input').click(); };
   document.getElementById('restore-file-input').onchange = function(e) { importBackup(e.target.files[0]); this.value = ''; };
