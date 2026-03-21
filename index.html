@@ -480,6 +480,39 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
 .hist-empty-title { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 600; color: var(--navy); margin-bottom: 10px; }
 .hist-empty-desc { font-size: 14px; color: var(--navyL); line-height: 1.7; }
 
+/* ── HISTORY CONTENT ── */
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi { background: white; border: 1px solid var(--bdr); border-radius: var(--r); padding: 15px 17px; box-shadow: var(--sh); border-top: 3px solid var(--navy); }
+.kpi-green { border-top-color: var(--green); }
+.kpi-navy { border-top-color: var(--navy); }
+.kpi-blue { border-top-color: var(--navy3); }
+.kpi-gold { border-top-color: var(--gold); }
+.kpi-lbl { font-size: 10.5px; color: var(--navyL); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; margin-bottom: 6px; }
+.kpi-val { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600; color: var(--navy); line-height: 1.1; margin-bottom: 4px; }
+.kpi-sub { font-size: 12px; color: var(--navyL); }
+.cs-label { font-size: 11px; font-weight: 700; color: var(--navyL); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 12px; }
+.graphs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.graph-card { background: white; border: 1px solid var(--bdr); border-radius: var(--r); padding: 18px; box-shadow: var(--sh); }
+.graph-card.wide { grid-column: 1 / -1; }
+.gc-hd { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+.gc-title { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 600; color: var(--navy); }
+.gc-sub { font-size: 12px; color: var(--navyL); margin-top: 2px; }
+.gc-val { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600; color: var(--navy); text-align: right; flex-shrink: 0; }
+.gc-val span { font-size: 11px; color: var(--navyL); display: block; text-align: right; font-family: 'DM Sans', sans-serif; font-weight: 400; margin-top: 1px; }
+.graph-card .chart-wrap { height: 180px; }
+.chart-wrap.tall { height: 220px; }
+/* History ring chart — different layout than dashboard rings */
+#tab-history .ring-wrap { position: static; width: auto; height: auto; flex-shrink: 1; display: flex; gap: 20px; align-items: center; margin-top: 10px; }
+#tab-history .ring-wrap canvas { width: 120px !important; height: 120px !important; }
+.ring-chart { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.ring-pct { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 600; color: var(--navy); }
+.ring-lbl { font-size: 11px; color: var(--navyL); margin-top: 1px; }
+.ring-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.rl-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--navyL); }
+.rl-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.rl-count { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--navy); font-weight: 600; }
+@media(max-width:760px) { .graphs-grid { grid-template-columns: 1fr; } .graph-card.wide { grid-column: auto; } }
+
 </style>
 </head>
 <body>
@@ -998,9 +1031,9 @@ function san(s) {
 }
 function storeGet() {
   try { var r = localStorage.getItem(SK); if (r) return JSON.parse(r); } catch(e) {}
-  // First ever load — mark March 2026 as the origin month
+  // First ever load — mark the current month as the origin
   if (!localStorage.getItem('pt_origin')) {
-    localStorage.setItem('pt_origin', '2026-3');
+    localStorage.setItem('pt_origin', getCurrentMonthKey());
   }
   return JSON.parse(JSON.stringify(INITIAL));
 }
@@ -1078,7 +1111,9 @@ function renderAll() {
 
 function applyRole() {
   var o = sess && sess.role === 'owner';
-  document.querySelectorAll('.owner-only').forEach(function(el) { el.style.display = o ? 'block' : 'none'; });
+  document.querySelectorAll('.owner-only').forEach(function(el) {
+    el.style.display = o ? '' : 'none';
+  });
 }
 
 function renderDash() {
@@ -1530,8 +1565,9 @@ function goTab(id, btn) {
   document.querySelectorAll('.nb').forEach(function(b) { b.classList.remove('on'); });
   document.getElementById('tab-' + id).classList.add('on');
   btn.classList.add('on');
-  var T = { dashboard: 'Dashboard', seo: 'SEO Tasks', webdev: 'Web Development', sem: 'Google Ads' };
+  var T = { dashboard: 'Dashboard', seo: 'SEO Tasks', webdev: 'Web Development', sem: 'Google Ads', history: 'Monthly History' };
   document.getElementById('pgt').textContent = T[id] || id;
+  if (id === 'history') renderHistory();
 }
 
 function openRowModal(cam) {
@@ -1586,6 +1622,58 @@ function baseOpts(title) {
       y: { grid: { color: C.gridLine, drawBorder: false }, ticks: { font: baseFont, color: C.tick } }
     }
   };
+}
+
+// ══ HISTORY HELPERS ══
+var chartDefaults = (function() {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a2744', titleColor: '#fff', bodyColor: 'rgba(255,255,255,.8)',
+        borderColor: 'rgba(255,255,255,.1)', borderWidth: 1,
+        titleFont: { family: "'Playfair Display', serif", size: 13 },
+        bodyFont: { family: "'DM Sans', sans-serif", size: 12 }, padding: 10, cornerRadius: 8
+      }
+    },
+    scales: {
+      x: { grid: { color: 'rgba(26,39,68,.06)', drawBorder: false }, ticks: { font: { family: "'DM Sans', sans-serif", size: 12 }, color: '#3d5080' } },
+      y: { grid: { color: 'rgba(26,39,68,.06)', drawBorder: false }, ticks: { font: { family: "'DM Sans', sans-serif", size: 12 }, color: '#3d5080' } }
+    }
+  };
+})();
+
+function mergeDeep(specific, base) {
+  var result = JSON.parse(JSON.stringify(base || {}));
+  function apply(target, src) {
+    for (var k in src) {
+      if (!src.hasOwnProperty(k)) continue;
+      if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
+        target[k] = target[k] || {};
+        apply(target[k], src[k]);
+      } else {
+        target[k] = src[k];
+      }
+    }
+  }
+  apply(result, specific);
+  return result;
+}
+
+function mkChart(canvasId, config) {
+  destroyChart(canvasId);
+  var ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  chartInstances[canvasId] = new Chart(ctx, config);
+}
+
+function mkKPI(val, label, sub, dir, colorClass) {
+  return '<div class="kpi ' + colorClass + '"><div class="kpi-lbl">' + label + '</div><div class="kpi-val">' + val + '</div><div class="kpi-sub">' + sub + '</div></div>';
+}
+
+function rlItem(color, label, count) {
+  return '<div class="rl-item"><div class="rl-dot" style="background:' + color + '"></div><span>' + label + '</span><span class="rl-count">' + count + '</span></div>';
 }
 
 // ══ RING (doughnut) chart ══
@@ -2224,7 +2312,7 @@ function renderHistSnapshot(snap) {
   mkChart('hist-ads-line', { type: 'line', data: { labels: labels, datasets: [
     { label: 'Clicks', data: days.map(function(x) { return x.clicks; }), borderColor: C.navy, backgroundColor: 'rgba(26,39,68,0.07)', tension: 0.4, fill: true, pointBackgroundColor: C.navy, pointRadius: 4, pointHoverRadius: 6 },
     { label: 'Impressions ÷10', data: days.map(function(x) { return Math.round(x.impressions / 10); }), borderColor: C.gold, backgroundColor: 'rgba(184,147,74,0.07)', tension: 0.4, fill: false, pointBackgroundColor: C.gold, pointRadius: 4, pointHoverRadius: 6 }
-  ] }, options: mergeDeep({ plugins: { legend: { display: true, labels: { color: C.navy, font: { family: C.font, size: 12 }, usePointStyle: true, boxWidth: 8 } } } }, chartDefaults) });
+  ] }, options: mergeDeep({ plugins: { legend: { display: true, labels: { color: C.navy, font: { family: "'DM Sans', sans-serif", size: 12 }, usePointStyle: true, boxWidth: 8 } } } }, chartDefaults) });
 
   document.getElementById('hist-spend-val').innerHTML = '$' + aon.totalCost.toFixed(2) + '<span>total</span>';
   mkChart('hist-spend-bar', { type: 'bar', data: { labels: labels, datasets: [{ label: 'Cost ($)', data: days.map(function(x) { return x.cost; }), backgroundColor: C.amber, borderRadius: 4, borderSkipped: false }] }, options: mergeDeep({ plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: function(v) { return '$' + v; } } } } }, chartDefaults) });
