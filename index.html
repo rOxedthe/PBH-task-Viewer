@@ -389,6 +389,22 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
   font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all .15s;
 }
 .btn-topbar-signout:hover { border-color: var(--red); color: var(--red); background: var(--redS); }
+.btn-backup {
+  display: flex; align-items: center; gap: 5px;
+  background: white; border: 1.5px solid var(--bdr2);
+  border-radius: var(--rsm); padding: 7px 13px;
+  color: var(--navyL); font-size: 13px; font-weight: 500;
+  font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all .15s;
+}
+.btn-backup:hover { border-color: var(--green); color: var(--green); background: var(--greenS); }
+.btn-restore {
+  display: flex; align-items: center; gap: 5px;
+  background: white; border: 1.5px solid var(--bdr2);
+  border-radius: var(--rsm); padding: 7px 13px;
+  color: var(--navyL); font-size: 13px; font-weight: 500;
+  font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all .15s;
+}
+.btn-restore:hover { border-color: var(--gold); color: var(--amber); background: var(--amberS); }
 
 /* ── LIVE LINK ── */
 .live-link {
@@ -658,6 +674,13 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
       <div class="tbr">
         <div class="live-pill"><span class="ldot"></span>Live</div>
         <span class="tst" id="tst">—</span>
+        <button class="btn-backup owner-only" id="btn-backup" style="display:none" title="Download full backup of all data">
+          💾 Backup
+        </button>
+        <button class="btn-restore owner-only" id="btn-restore" style="display:none" title="Restore data from a backup file">
+          📂 Restore
+        </button>
+        <input type="file" id="restore-file-input" accept=".json" style="display:none">
         <button class="btn-reset-trigger owner-only" id="btn-new-month" style="display:none">
           📅 New Month
         </button>
@@ -807,7 +830,10 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
           <div class="stitle">Monthly History</div>
           <div class="sdesc">Snapshots saved at the end of each month — SEO, blogs &amp; ad performance</div>
         </div>
-        <div id="hist-month-picker" class="hist-picker"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btnadd owner-only" id="btn-save-snapshot" style="display:none;background:var(--green)">📸 Save Snapshot Now</button>
+          <div id="hist-month-picker" class="hist-picker"></div>
+        </div>
       </div>
 
       <!-- Empty state -->
@@ -1109,6 +1135,45 @@ function storeSemEditText(cam, i, field, val) {
   storeSave(d); return d;
 }
 
+// ── BACKUP / RESTORE ──
+function exportBackup() {
+  var backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: localStorage.getItem(SK),
+    history: localStorage.getItem(HIST_KEY),
+    origin: localStorage.getItem('pt_origin')
+  };
+  var blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var now = new Date();
+  var fname = 'pbh-backup-' + now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + '.json';
+  a.href = url; a.download = fname; a.click();
+  URL.revokeObjectURL(url);
+  toast('✅ Backup downloaded: ' + fname);
+}
+
+function importBackup(file) {
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var backup = JSON.parse(e.target.result);
+      if (!backup.version || !backup.data) { toast('⚠ Invalid backup file'); return; }
+      if (!confirm('This will REPLACE all current data with the backup from ' + (backup.exportedAt || 'unknown date') + '. Continue?')) return;
+      localStorage.setItem(SK, backup.data);
+      if (backup.history) localStorage.setItem(HIST_KEY, backup.history);
+      if (backup.origin) localStorage.setItem('pt_origin', backup.origin);
+      toast('✅ Data restored successfully — reloading…');
+      setTimeout(function() { location.reload(); }, 1200);
+    } catch(err) {
+      toast('⚠ Failed to read backup file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
 // ══ STATE ══
 var sess = null, data = null, seoF = 'all', pendCam = null;
 
@@ -1202,10 +1267,11 @@ function renderSEO() {
   document.getElementById('seocnt').textContent = rows.length;
   document.getElementById('seotb').innerHTML = rows.map(function(t) {
     var cell = own ? mkSel(t.id, t.status) : '<span class="' + stC(t.status) + '">' + stD(t.status) + ' ' + t.status + '</span>';
+    var pageC  = own ? '<span class="ef tn" data-col="seoTasks" data-id="' + t.id + '" data-field="page">'      + (t.page      || '') + '</span>' : t.page;
     var urlC   = own ? '<span class="ef tu" data-col="seoTasks" data-id="' + t.id + '" data-field="url">'       + (t.url       || '') + '</span>' : (t.url       || '—');
     var metaC  = own ? '<span class="ef tm" data-col="seoTasks" data-id="' + t.id + '" data-field="metaTitle">' + (t.metaTitle  || '') + '</span>' : (t.metaTitle  || '—');
-    var notesC = own ? '<span class="ef"    data-col="seoTasks" data-id="' + t.id + '" data-field="notes">'    + (t.notes     || '') + '</span>' : (t.notes     || '—');
-    return '<tr><td>' + t.num + '</td><td class="tn">' + t.page + '</td><td>' + urlC + '</td><td>' + metaC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td>' + cell + '</td><td style="font-size:11px">' + notesC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
+    var notesC = own ? '<span class="ef"    data-col="seoTasks" data-id="' + t.id + '" data-field="notes">'     + (t.notes     || '') + '</span>' : (t.notes     || '—');
+    return '<tr><td>' + t.num + '</td><td>' + pageC + '</td><td>' + urlC + '</td><td>' + metaC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td>' + cell + '</td><td style="font-size:11px">' + notesC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
   }).join('');
 
   var bd = data.blogPosts.filter(function(t) { return t.status === 'Completed'; }).length;
@@ -1559,6 +1625,15 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('btn-logout').onclick = authLogout;
   document.getElementById('btn-logout-full').onclick = authLogout;
   document.getElementById('btn-logout-topbar').onclick = authLogout;
+  document.getElementById('btn-backup').onclick = exportBackup;
+  document.getElementById('btn-restore').onclick = function() { document.getElementById('restore-file-input').click(); };
+  document.getElementById('restore-file-input').onchange = function(e) { importBackup(e.target.files[0]); this.value = ''; };
+  document.getElementById('btn-save-snapshot').onclick = function() {
+    var d = storeGet();
+    saveMonthSnapshot(JSON.parse(JSON.stringify(d)));
+    toast('📸 Snapshot saved to history!');
+    renderHistory();
+  };
 
   // SEO filters
   document.querySelectorAll('#sfilt .fp').forEach(function(btn) {
