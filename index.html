@@ -195,6 +195,16 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
 .pdeliv{font-size:12px;color:var(--navyL)}
 .overall{font-family:'Playfair Display',serif;font-size:30px;font-weight:600;color:var(--navy)}
 .phsel{background:var(--cream2);border:1px solid var(--bdr);border-radius:6px;color:var(--navy);padding:5px 9px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
+.ph-edit{cursor:pointer;border-radius:3px;transition:background .15s}
+.ph-edit-block{display:block;width:100%}
+/* Universal editable-field indicator */
+.ef{cursor:pointer;border-radius:3px;padding:1px 3px;transition:background .15s;display:inline}
+.ef:hover{background:rgba(26,39,68,.07);outline:1px dashed rgba(26,39,68,.3);outline-offset:1px}
+.ef:hover::after{content:' ✏';font-size:9px;opacity:.45;vertical-align:middle}
+.ph-edit:hover{background:rgba(26,39,68,.07);outline:1px dashed rgba(26,39,68,.3);outline-offset:1px}
+.ph-edit:hover::after{content:' ✏';font-size:9px;opacity:.45;vertical-align:middle}
+.editable:hover::after{content:' ✏';font-size:9px;opacity:.4;vertical-align:middle}
+.prog-edit:hover::after{content:' ✏';font-size:9px;opacity:.4;vertical-align:middle}
 
 /* ── SEM ── */
 .semhd{margin-bottom:18px}
@@ -707,7 +717,10 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
     <div class="tab" id="tab-webdev">
       <div class="shd">
         <div><div class="stitle">Development Phases</div><div class="sdesc">Backend dev · Frontend complete · Optimizations active</div></div>
-        <div class="overall" id="ovpct"></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="overall" id="ovpct"></div>
+          <button class="btnadd owner-only" id="btn-add-phase" style="display:none">+ Add Phase</button>
+        </div>
       </div>
       <div class="pgrid" id="phases"></div>
     </div>
@@ -925,8 +938,21 @@ body{background:var(--cream);color:var(--navy);font-family:'DM Sans',sans-serif;
         <div class="rst-field-row">
           <div class="rst-field-icon">🌐</div>
           <div class="rst-field-body">
-            <div class="rst-field-label">Reset Web Dev phases too?</div>
-            <div class="rst-field-sub">Carry over current progress or start fresh</div>
+            <div class="rst-field-label">How many Web Dev phases this month?</div>
+            <div class="rst-field-sub">Add new phases or keep the same count</div>
+            <div class="rst-input-row">
+              <button class="rst-stepper" id="phase-minus">−</button>
+              <input type="number" class="rst-number" id="rst-phase-count" value="5" min="1" max="20">
+              <button class="rst-stepper" id="phase-plus">+</button>
+              <span class="rst-unit">phases</span>
+            </div>
+          </div>
+        </div>
+        <div class="rst-field-row">
+          <div class="rst-field-icon">🔄</div>
+          <div class="rst-field-body">
+            <div class="rst-field-label">Reset Web Dev progress too?</div>
+            <div class="rst-field-sub">Carry over current progress or start fresh — off by default</div>
             <div class="rst-toggle-row">
               <label class="rst-toggle">
                 <input type="checkbox" id="rst-reset-web">
@@ -1071,6 +1097,17 @@ function storeAddRow(cam, r) {
   d[ck].avgCPC = d[ck].totalClicks > 0 ? d[ck].totalCost / d[ck].totalClicks : 0;
   storeSave(d); return d;
 }
+function storeFieldEdit(col, id, field, val) {
+  var d = storeGet(), now = new Date().toISOString().split('T')[0];
+  var item = d[col] && d[col].find(function(x) { return x.id === id; });
+  if (item) { item[field] = san(val); item.lastUpdated = now; }
+  storeSave(d); return d;
+}
+function storeSemEditText(cam, i, field, val) {
+  var d = storeGet(), ck = cam === 'aon' ? 'semAlwaysOn' : 'semWomensDay';
+  if (d[ck] && d[ck].dailyData[i]) d[ck].dailyData[i][field] = san(val);
+  storeSave(d); return d;
+}
 
 // ══ STATE ══
 var sess = null, data = null, seoF = 'all', pendCam = null;
@@ -1165,7 +1202,10 @@ function renderSEO() {
   document.getElementById('seocnt').textContent = rows.length;
   document.getElementById('seotb').innerHTML = rows.map(function(t) {
     var cell = own ? mkSel(t.id, t.status) : '<span class="' + stC(t.status) + '">' + stD(t.status) + ' ' + t.status + '</span>';
-    return '<tr><td>' + t.num + '</td><td class="tn">' + t.page + '</td><td class="tu">' + (t.url || '—') + '</td><td class="tm">' + (t.metaTitle || '—') + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td>' + cell + '</td><td style="font-size:11px">' + (t.notes || '—') + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
+    var urlC   = own ? '<span class="ef tu" data-col="seoTasks" data-id="' + t.id + '" data-field="url">'       + (t.url       || '') + '</span>' : (t.url       || '—');
+    var metaC  = own ? '<span class="ef tm" data-col="seoTasks" data-id="' + t.id + '" data-field="metaTitle">' + (t.metaTitle  || '') + '</span>' : (t.metaTitle  || '—');
+    var notesC = own ? '<span class="ef"    data-col="seoTasks" data-id="' + t.id + '" data-field="notes">'    + (t.notes     || '') + '</span>' : (t.notes     || '—');
+    return '<tr><td>' + t.num + '</td><td class="tn">' + t.page + '</td><td>' + urlC + '</td><td>' + metaC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td>' + cell + '</td><td style="font-size:11px">' + notesC + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
   }).join('');
 
   var bd = data.blogPosts.filter(function(t) { return t.status === 'Completed'; }).length;
@@ -1180,7 +1220,9 @@ function renderSEO() {
         ? '<a class="live-link" href="' + t.liveUrl + '" target="_blank" rel="noopener"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8M7 1h4m0 0v4m0-4L5 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> View Post</a>'
         : '<span class="no-link">Not live yet</span>';
     }
-    return '<tr><td>' + t.num + '</td><td class="tn" style="max-width:230px">' + t.title + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td style="font-family:\'DM Mono\',monospace;font-size:12px">' + t.wordCount + '</td><td>' + cell + '</td><td class="tu">' + t.slug + '</td><td>' + linkCell + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
+    var titleC = own ? '<span class="ef" data-col="blogPosts" data-id="' + t.id + '" data-field="title">' + t.title + '</span>' : t.title;
+    var slugC  = own ? '<span class="ef tu" data-col="blogPosts" data-id="' + t.id + '" data-field="slug">'  + (t.slug  || '') + '</span>' : (t.slug  || '—');
+    return '<tr><td>' + t.num + '</td><td class="tn" style="max-width:230px">' + titleC + '</td><td><span class="' + prC(t.priority) + '">' + t.priority + '</span></td><td style="font-family:\'DM Mono\',monospace;font-size:12px">' + t.wordCount + '</td><td>' + cell + '</td><td>' + slugC + '</td><td>' + linkCell + '</td><td style="font-family:\'DM Mono\',monospace;font-size:11px">' + (t.lastUpdated || '—') + '</td></tr>';
   }).join('');
 
   // Attach select listeners
@@ -1205,12 +1247,13 @@ function renderSEO() {
     };
     inp.onkeydown = function(e) { if (e.key === 'Enter') this.blur(); };
   });
+  wireInlineEdits();
 }
 
 function renderWebDev() {
   var own = sess && sess.role === 'owner';
   var ps = data.webDevPhases;
-  var op = Math.round(ps.reduce(function(s, p) { return s + (p.done || 0); }, 0) / ps.length);
+  var op = ps.length > 0 ? Math.round(ps.reduce(function(s, p) { return s + (p.done || 0); }, 0) / ps.length) : 0;
   document.getElementById('ovpct').textContent = op + '% overall';
   document.getElementById('phases').innerHTML = ps.map(function(p) {
     var pcls = p.status === 'Completed' ? 'pdn' : p.status === 'In Progress' ? 'pip' : '';
@@ -1219,12 +1262,19 @@ function renderWebDev() {
     var progDisplay = own
       ? '<span class="prog-edit" data-id="' + p.id + '" title="Click to edit" style="cursor:pointer;border-bottom:1px dashed var(--navy);color:var(--navy)">' + p.done + '%</span>'
       : '<span>' + p.done + '%</span>';
-    return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + p.name + '</div><span class="' + prC(p.priority) + '">' + p.priority + '</span></div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + p.description + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + p.deliverables + '</span>' + foot + '</div></div>';
+    if (own) {
+      var nameEl = '<span class="ph-edit" data-id="' + p.id + '" data-field="name" data-type="text" title="Click to rename">' + (p.name || 'New Phase') + '</span>';
+      var descEl = '<span class="ph-edit ph-edit-block" data-id="' + p.id + '" data-field="description" data-type="area" title="Click to edit description">' + (p.description || '') + '</span>';
+      var delivEl = '<span class="ph-edit" data-id="' + p.id + '" data-field="deliverables" data-type="text" title="Click to edit">' + (p.deliverables || '') + '</span>';
+      return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + nameEl + '</div><span class="' + prC(p.priority) + '">' + p.priority + '</span></div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + descEl + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + delivEl + '</span>' + foot + '</div></div>';
+    }
+    return '<div class="pcard ' + pcls + '"><div class="phd"><div><div class="pname">Phase ' + p.phase + ' — ' + (p.name || '') + '</div><span class="' + prC(p.priority) + '">' + p.priority + '</span></div><div class="pnum">' + p.phase + '</div></div><p class="pdesc">' + (p.description || '') + '</p><div class="pmeta"><span>📅 ' + p.start + ' → ' + p.end + '</span><span>🏷 ' + p.category + '</span></div><div class="ppll"><span>Progress</span>' + progDisplay + '</div><div class="ppt"><div class="ppf" style="width:' + p.done + '%;background:' + fc + '"></div></div><div class="pft"><span class="pdeliv">✓ ' + (p.deliverables || '') + '</span>' + foot + '</div></div>';
   }).join('');
   document.querySelectorAll('.phsel').forEach(function(sel) {
     sel.onchange = function() { data = storeSetStatus(this.dataset.id, this.value); renderAll(); toast('Status updated ✓'); };
   });
   if (own) {
+    // Progress % editing
     document.querySelectorAll('.prog-edit').forEach(function(el) {
       el.onclick = function() {
         var id = this.dataset.id;
@@ -1242,6 +1292,31 @@ function renderWebDev() {
         };
         inp.addEventListener('blur', save);
         inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { renderWebDev(); } });
+      };
+    });
+    // Text field editing (name, description, deliverables)
+    document.querySelectorAll('.ph-edit').forEach(function(el) {
+      el.onclick = function() {
+        var id = this.dataset.id, field = this.dataset.field, type = this.dataset.type;
+        var cur = this.textContent;
+        var inp = type === 'area' ? document.createElement('textarea') : document.createElement('input');
+        if (type !== 'area') { inp.type = 'text'; inp.value = cur; }
+        else { inp.value = cur; inp.rows = 3; }
+        inp.style.cssText = 'background:white;border:1.5px solid var(--navy);border-radius:4px;padding:4px 7px;font-size:13px;outline:none;font-family:\'DM Sans\',sans-serif;color:var(--navy);width:100%;resize:vertical';
+        this.replaceWith(inp); inp.focus();
+        if (type !== 'area') inp.select();
+        var save = function() {
+          var val = inp.value.trim();
+          var d = storeGet();
+          var phase = d.webDevPhases.find(function(p) { return p.id === id; });
+          if (phase && val) { phase[field] = val; phase.lastUpdated = new Date().toISOString().split('T')[0]; storeSave(d); data = d; }
+          renderWebDev(); renderDash(); toast('Saved ✓');
+        };
+        inp.addEventListener('blur', save);
+        inp.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && type !== 'area') inp.blur();
+          if (e.key === 'Escape') renderWebDev();
+        });
       };
     });
   }
@@ -1278,11 +1353,12 @@ function renderCam(key, cam, sId, cId, tbId, ftId) {
   document.getElementById(tbId).innerHTML = days.map(function(d, i) {
     var ctr = d.impressions > 0 ? ((d.clicks / d.impressions) * 100).toFixed(1) : '0.0';
     return '<tr><td>' + d.date + '</td><td>' + d.day + '</td>' +
-      '<td><span class="editable" data-cam="' + key + '" data-i="' + i + '" data-f="clicks">' + d.clicks.toLocaleString() + '</span></td>' +
-      '<td><span class="editable" data-cam="' + key + '" data-i="' + i + '" data-f="impressions">' + d.impressions.toLocaleString() + '</span></td>' +
+      '<td><span class="editable ef" data-cam="' + key + '" data-i="' + i + '" data-f="clicks">' + d.clicks.toLocaleString() + '</span></td>' +
+      '<td><span class="editable ef" data-cam="' + key + '" data-i="' + i + '" data-f="impressions">' + d.impressions.toLocaleString() + '</span></td>' +
       '<td>$' + d.cpc.toFixed(2) + '</td>' +
-      '<td><span class="editable" data-cam="' + key + '" data-i="' + i + '" data-f="cost">' + d.cost.toFixed(2) + '</span></td>' +
-      '<td>' + ctr + '%</td><td style="font-size:12px">' + (d.notes || '') + '</td></tr>';
+      '<td><span class="editable ef" data-cam="' + key + '" data-i="' + i + '" data-f="cost">' + d.cost.toFixed(2) + '</span></td>' +
+      '<td>' + ctr + '%</td>' +
+      '<td><span class="ef" data-cam="' + key + '" data-i="' + i + '" data-field="notes">' + (d.notes || '') + '</span></td></tr>';
   }).join('');
 
   var ctr = cam.totalImpressions > 0 ? ((cam.totalClicks / cam.totalImpressions) * 100).toFixed(1) : '0.0';
@@ -1302,6 +1378,7 @@ function renderCam(key, cam, sId, cId, tbId, ftId) {
       inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') done(); if (e.key === 'Escape') { inp.value = cur; done(); } });
     };
   });
+  wireInlineEdits();
 }
 
 // ══ GOOGLE ADS ══
@@ -1494,6 +1571,15 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Add row buttons
+  document.getElementById('btn-add-phase').onclick = function() {
+    var d = storeGet();
+    var pn = d.webDevPhases.length + 1;
+    var mnames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var mn = mnames[new Date().getMonth()] + ' ' + new Date().getFullYear();
+    d.webDevPhases.push({ id: 'web-' + pn, phase: pn, name: 'New Phase', description: 'Enter phase description', category: 'Backend', start: mn, end: mn, status: 'Not Started', priority: 'High', done: 0, deliverables: 'Enter deliverables', lastUpdated: new Date().toISOString().split('T')[0] });
+    storeSave(d); data = d;
+    renderWebDev(); renderDash(); toast('Phase added ✓');
+  };
   document.getElementById('btn-aon-add').onclick = function() { openRowModal('aon'); };
   document.getElementById('btn-wd-add').onclick = function() { openRowModal('wd'); };
   document.getElementById('btn-rowcancel').onclick = function() { document.getElementById('rowmod').style.display = 'none'; };
@@ -1559,6 +1645,38 @@ async function doLogin() {
   }
 }
 function showLErr(m) { var e = document.getElementById('lerr'); e.textContent = m; e.style.display = 'block'; }
+
+function wireInlineEdits() {
+  document.querySelectorAll('.ef[data-field]').forEach(function(el) {
+    if (el._wired) return; el._wired = true;
+    el.onclick = function() {
+      var id = this.dataset.id, field = this.dataset.field, col = this.dataset.col;
+      var camKey = this.dataset.cam, rowIdx = this.dataset.i;
+      var isArea = this.dataset.type === 'area';
+      var cur = this.textContent;
+      var inp = isArea ? document.createElement('textarea') : document.createElement('input');
+      inp.value = cur;
+      if (!isArea) inp.type = 'text';
+      else { inp.rows = 2; }
+      inp.style.cssText = 'background:white;border:1.5px solid var(--navy);border-radius:4px;padding:3px 7px;font-size:13px;outline:none;font-family:\'DM Sans\',sans-serif;color:var(--navy);' + (isArea ? 'resize:vertical;width:100%' : 'min-width:120px');
+      this.replaceWith(inp); inp.focus(); if (!isArea) inp.select();
+      var save = function() {
+        var val = inp.value.trim();
+        if (camKey !== undefined) {
+          data = storeSemEditText(camKey, parseInt(rowIdx), field, val); renderSEM();
+        } else if (col) {
+          data = storeFieldEdit(col, id, field, val); renderSEO(); renderDash();
+        }
+        toast('Saved ✓');
+      };
+      inp.addEventListener('blur', save);
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !isArea) inp.blur();
+        if (e.key === 'Escape') { if (camKey !== undefined) renderSEM(); else renderSEO(); }
+      });
+    };
+  });
+}
 
 function goTab(id, btn) {
   document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('on'); });
@@ -2059,6 +2177,7 @@ function openResetModal() {
   var d = storeGet();
   document.getElementById('rst-seo-count').value = d.seoTasks ? d.seoTasks.length : 24;
   document.getElementById('rst-blog-count').value = d.blogPosts ? d.blogPosts.length : 5;
+  document.getElementById('rst-phase-count').value = d.webDevPhases ? d.webDevPhases.length : 5;
 
   document.getElementById('reset-modal').style.display = 'flex';
 }
@@ -2066,6 +2185,7 @@ function openResetModal() {
 function doMonthlyReset() {
   var seoCount = parseInt(document.getElementById('rst-seo-count').value) || 24;
   var blogCount = parseInt(document.getElementById('rst-blog-count').value) || 5;
+  var phaseCount = parseInt(document.getElementById('rst-phase-count').value) || 5;
   var resetWeb = document.getElementById('rst-reset-web').checked;
   var nextMonth = getNextMonthName();
 
@@ -2102,7 +2222,18 @@ function doMonthlyReset() {
   d.blogPosts = d.blogPosts.slice(0, blogCount);
   d.blogPosts.forEach(function(t) { t.status = 'Not Started'; t.liveUrl = ''; t.lastUpdated = now; });
 
-  // Optionally reset web dev
+  // Add new phases if count increased
+  while (d.webDevPhases.length < phaseCount) {
+    var pn = d.webDevPhases.length + 1;
+    var mnames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var mn = mnames[new Date().getMonth()] + ' ' + new Date().getFullYear();
+    d.webDevPhases.push({ id: 'web-' + pn, phase: pn, name: 'New Phase', description: 'Enter phase description', category: 'Backend', start: mn, end: mn, status: 'Not Started', priority: 'High', done: 0, deliverables: 'Enter deliverables', lastUpdated: now });
+  }
+  // Trim if count reduced
+  d.webDevPhases = d.webDevPhases.slice(0, phaseCount);
+  // Re-number phases in case of trim
+  d.webDevPhases.forEach(function(p, i) { p.phase = i + 1; p.id = 'web-' + (i + 1); });
+  // Optionally reset progress
   if (resetWeb) {
     d.webDevPhases.forEach(function(p) { p.status = 'Not Started'; p.done = 0; p.lastUpdated = now; });
   }
@@ -2145,6 +2276,14 @@ function wireResetModal() {
   document.getElementById('blog-plus').onclick = function() {
     var inp = document.getElementById('rst-blog-count');
     inp.value = Math.min(50, parseInt(inp.value) + 1);
+  };
+  document.getElementById('phase-minus').onclick = function() {
+    var inp = document.getElementById('rst-phase-count');
+    inp.value = Math.max(1, parseInt(inp.value) - 1);
+  };
+  document.getElementById('phase-plus').onclick = function() {
+    var inp = document.getElementById('rst-phase-count');
+    inp.value = Math.min(20, parseInt(inp.value) + 1);
   };
 
   // Toggle label
